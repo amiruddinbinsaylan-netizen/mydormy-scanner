@@ -407,10 +407,13 @@ function nyalakan() {
   siapkanAudio();
   pesanKamera('Meminta izin kamera...', false);
   try {
-    scanner = scanner || new Html5Qrcode('reader', { experimentalFeatures: { useBarCodeDetectorIfSupported: true } });
+    scanner = scanner || new Html5Qrcode('reader', {
+      formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE],
+      experimentalFeatures: { useBarCodeDetectorIfSupported: true }
+    });
     scanner.start(
       { facingMode: 'environment' },
-      { fps: 10, qrbox: { width: 260, height: 160 } },
+      { fps: 10, qrbox: function (lebar, tinggi) { var sisi = Math.floor(Math.min(lebar, tinggi) * 0.7); return { width: sisi, height: sisi }; } },
       function (teks) { tambahAntrian(teks, 'kamera'); },
       function () {}
     ).then(function () {
