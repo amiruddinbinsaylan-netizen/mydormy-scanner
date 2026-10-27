@@ -38,6 +38,14 @@ ul.riwayat li{display:flex;justify-content:space-between;gap:10px;padding:8px 4p
 .keluar{background:none;color:var(--accent);font-weight:600}
 #toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--accent);color:#fff;padding:12px 22px;border-radius:999px;opacity:0;pointer-events:none;transition:opacity .3s;font-size:.9rem;max-width:90vw;text-align:center;z-index:50}
 #toast.tampil{opacity:1}
+.banner{padding:16px 18px; border-radius:20px; margin-bottom:14px; font-weight:700; font-size:1.05rem; text-align:center; color:#fff}
+.banner small{display:block; font-weight:500; opacity:.95; margin-top:4px}
+.banner.ok{background:linear-gradient(135deg,#1E9E5B,#2ECC71)}
+.banner.dup{background:linear-gradient(135deg,#C77D0A,#F5A623)}
+.banner.gagal{background:linear-gradient(135deg,#C0392B,#E74C3C)}
+.kilat{position:fixed; inset:0; pointer-events:none; z-index:90; animation:kilat .8s ease-out forwards}
+@keyframes kilat{from{opacity:1}to{opacity:0}}
+.mono{font-family:ui-monospace,Menlo,Consolas,monospace; word-break:break-all}
 </style>
 </head>
 <body>
@@ -61,6 +69,7 @@ ul.riwayat li{display:flex;justify-content:space-between;gap:10px;padding:8px 4p
   <div class="atas">
     <div><b id="namaUser">-</b><br><small>Scanner MyDormy</small></div>
     <button type="button" class="keluar" id="btnKeluar">Keluar</button>
+    <div id="banner" class="banner sembunyi"></div>
   </div>
 
   <div class="kartu">
@@ -87,7 +96,12 @@ ul.riwayat li{display:flex;justify-content:space-between;gap:10px;padding:8px 4p
 
   <div class="kartu">
     <button type="button" class="btn" id="btnKamera" style="margin-top:0">Nyalakan Kamera</button>
+    <button type="button" class="btn" id="btnFoto" style="background:var(--surface);color:var(--text)">Foto QR (cadangan)</button>
+    <input type="file" accept="image/*" capture="environment" id="inFoto" class="sembunyi">
+    <div id="pembacaFoto" class="sembunyi"></div>
+    <button type="button" class="keluar" id="btnTesBunyi" style="margin-top:10px">Tes bunyi sukses dan gagal</button>
     <p class="catatan" id="pesanKamera"></p>
+    <p class="catatan mono" id="terbaca"></p>
     <div id="reader"></div>
 
     <div class="hasil" id="hasil">
@@ -179,21 +193,58 @@ function siapkanAudio() {
   } catch (e) {}
 }
 
-function bip(ok) {
+function bip(jenis) {
+  if (jenis === true) jenis = 'ok';
+  else if (jenis === false) jenis = 'gagal';
   try {
     siapkanAudio();
-    var o = audioCtx.createOscillator();
-    var g = audioCtx.createGain();
-    o.frequency.value = ok ? 880 : 240;
-    g.gain.value = 0.12;
-    o.connect(g);
-    g.connect(audioCtx.destination);
-    o.start();
-    o.stop(audioCtx.currentTime + (ok ? 0.12 : 0.3));
+    var pola = {
+      ok:    [[880, 0, 0.14], [1320, 0.16, 0.22]],
+      dup:   [[660, 0, 0.18], [660, 0.26, 0.18]],
+      gagal: [[330, 0, 0.22], [220, 0.28, 0.4]]
+    }[jenis] || [[330, 0, 0.3]];
+    var t0 = audioCtx.currentTime;
+    pola.forEach(function (n) {
+      var o = audioCtx.createOscillator();
+      var g = audioCtx.createGain();
+      o.type = jenis === 'gagal' ? 'sawtooth' : 'sine';
+      o.frequency.value = n[0];
+      g.gain.setValueAtTime(0.0001, t0 + n[1]);
+      g.gain.exponentialRampToValueAtTime(0.35, t0 + n[1] + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + n[1] + n[2]);
+      o.connect(g);
+      g.connect(audioCtx.destination);
+      o.start(t0 + n[1]);
+      o.stop(t0 + n[1] + n[2] + 0.05);
+    });
   } catch (e) {}
-  try { if (navigator.vibrate) navigator.vibrate(ok ? 80 : [120, 60, 120]); } catch (e) {}
+  try { if (navigator.vibrate) navigator.vibrate(jenis === 'ok' ? 120 : [200, 80, 200]); } catch (e) {}
+  kilat(jenis);
 }
 
+function kilat(jenis) {
+  var warna = { ok: '#2ECC71', dup: '#F5A623', gagal: '#E74C3C' }[jenis] || '#E74C3C';
+  var d = document.createElement('div');
+  d.className = 'kilat';
+  d.style.boxShadow = 'inset 0 0 0 10px ' + warna + ', inset 0 0 80px ' + warna;
+  document.body.appendChild(d);
+  setTimeout(function () { if (d.parentNode) d.parentNode.removeChild(d); }, 900);
+}
+
+var timerBanner = null;
+function tampilHasil(jenis, judul, detail) {
+  var simbol = { ok: '&#10004;', dup: '!', gagal: '&#10006;' }[jenis] || '&#9638;';
+  var k = el('hasil');
+  k.className = 'hasil ' + jenis;
+  k.innerHTML = '<div class="ik">' + simbol + '</div><div><b>' + esc(judul) + '</b><small>' + esc(detail) + '</small></div>';
+
+  var b = el('banner');
+  var awal = { ok: 'BERHASIL', dup: 'SUDAH TERCATAT', gagal: 'GAGAL' }[jenis] || '';
+  b.className = 'banner ' + jenis;
+  b.innerHTML = awal + ' - ' + esc(judul) + '<small>' + esc(detail) + '</small>';
+  clearTimeout(timerBanner);
+  timerBanner = setTimeout(function () { b.classList.add('sembunyi'); }, 4000);
+}
 /* ----- Layar ----- */
 function keLogin(pesan) {
   matikan();
@@ -296,12 +347,6 @@ function isiModul() {
 }
 
 /* ----- Hasil & riwayat ----- */
-function tampilHasil(jenis, judul, detail) {
-  var simbol = { ok: '&#10004;', dup: '!', gagal: '&#10006;' }[jenis] || '&#9638;';
-  var k = el('hasil');
-  k.className = 'hasil ' + jenis;
-  k.innerHTML = '<div class="ik">' + simbol + '</div><div><b>' + esc(judul) + '</b><small>' + esc(detail) + '</small></div>';
-}
 
 function tambahRiwayat(nama, jenis) {
   riwayat.unshift({ jam: jamSekarang(), nama: nama, jenis: jenis });
@@ -360,7 +405,7 @@ function hasilKirim(res, t) {
   } else if (res.duplikat) {
     var nama = res.rekam ? res.rekam.nama : t.kode;
     tampilHasil('dup', nama, res.pesan);
-    bip(false);
+    bip('dup');
     tambahRiwayat(nama, 'dup');
   } else if (res.pesan && res.pesan.indexOf('Sesi berakhir') === 0) {
     keLogin('Sesi berakhir. Silakan masuk lagi.');
@@ -407,19 +452,19 @@ function nyalakan() {
   siapkanAudio();
   pesanKamera('Meminta izin kamera...', false);
   try {
-    scanner = scanner || new Html5Qrcode('reader', {
-      formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE],
-      experimentalFeatures: { useBarCodeDetectorIfSupported: true }
-    });
+    scanner = scanner || new Html5Qrcode('reader', { formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE], verbose: false });
     scanner.start(
       { facingMode: 'environment' },
       { fps: 10, qrbox: function (lebar, tinggi) { var sisi = Math.floor(Math.min(lebar, tinggi) * 0.7); return { width: sisi, height: sisi }; } },
-      function (teks) { tambahAntrian(teks, 'kamera'); },
+      function (teks) {
+        el('terbaca').textContent = 'Terbaca: ' + teks;
+        tambahAntrian(teks, 'kamera');
+      },
       function () {}
     ).then(function () {
       kameraAktif = true;
       el('btnKamera').textContent = 'Matikan Kamera';
-      pesanKamera('Kamera aktif. Arahkan ke barcode atau QR.', false);
+      pesanKamera('Kamera aktif. Dekatkan QR sampai memenuhi kotak; pastikan terang dan tidak buram.', false);
       kunciLayar();
     }).catch(gagalKamera);
   } catch (err) {
@@ -438,6 +483,29 @@ function matikan() {
   }).catch(function () { kameraAktif = false; });
 }
 
+function tesBunyi() {
+  siapkanAudio();
+  bip('ok');
+  setTimeout(function () { bip('gagal'); }, 900);
+  toast('Harus terdengar bunyi tinggi (sukses) lalu bunyi rendah (gagal). Jika tidak ada suara: naikkan volume media dan matikan mode senyap.');
+}
+
+function bacaFotoQr(file) {
+  if (!file) return;
+  if (typeof Html5Qrcode === 'undefined') {
+    tampilHasil('gagal', 'Pustaka scanner belum dimuat', 'Periksa internet, lalu muat ulang halaman.');
+    bip('gagal');
+    return;
+  }
+  var pembaca = new Html5Qrcode('pembacaFoto');
+  pembaca.scanFile(file, false)
+    .then(function (teks) { el('terbaca').textContent = 'Terbaca: ' + teks; tambahAntrian(teks, 'foto'); })
+    .catch(function () {
+      tampilHasil('gagal', 'QR tidak terbaca', 'Foto ulang lebih dekat, terang, dan tidak buram.');
+      bip('gagal');
+    })
+    .then(function () { try { pembaca.clear(); } catch (e) {} });
+}
 /* ----- Mulai ----- */
 document.addEventListener('DOMContentLoaded', function () {
   var belumIsi = URL_API.indexOf('GANTI') === 0;
@@ -459,6 +527,10 @@ document.addEventListener('DOMContentLoaded', function () {
   el('inPass').addEventListener('keydown', function (e) { if (e.key === 'Enter') prosesMasuk(); });
   el('btnKeluar').addEventListener('click', prosesKeluar);
   el('btnKamera').addEventListener('click', function () { if (kameraAktif) matikan(); else nyalakan(); });
+  el('btnTesBunyi').addEventListener('click', tesBunyi);
+  el('btnFoto').addEventListener('click', function () { el('inFoto').click(); });
+  el('inFoto').addEventListener('change', function () { bacaFotoQr(this.files && this.files[0]); this.value = ''; });
+  document.addEventListener('click', siapkanAudio, { once: true });
   el('inKode').addEventListener('keydown', function (e) {
     if (e.key !== 'Enter') return;
     var v = this.value;
