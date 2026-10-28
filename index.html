@@ -360,7 +360,7 @@ function tambahRiwayat(nama, jenis) {
 
 /* ----- Antrean scan ----- */
 function tambahAntrian(kode, sumber) {
-  kode = String(kode || '').trim();
+  kode = String(kode || '').trim().replace(/^MYDORMY\|/i, '');
   if (!kode) return;
   var tgl = el('tgl').value;
   if (!tgl) { toast('Isi tanggal dulu'); return; }
