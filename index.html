@@ -67,7 +67,7 @@ ul.riwayat li{display:flex;justify-content:space-between;gap:10px;padding:8px 4p
 <!-- SCAN -->
 <div id="layarScan" class="layar sembunyi">
   <div class="atas">
-    <div><b id="namaUser">-</b><br><small>Scanner MyDormy</small></div>
+    <div><b id="namaUser">-</b><br><small>Scanner MyDormy</small><br><small id="infoServer"></small></div>
     <button type="button" class="keluar" id="btnKeluar">Keluar</button>
     <div id="banner" class="banner sembunyi"></div>
   </div>
@@ -261,6 +261,7 @@ function keScan(nama) {
   el('layarScan').classList.remove('sembunyi');
   el('namaUser').textContent = nama || 'Pengguna';
   el('tgl').value = hariIni();
+  muatInfoServer();
 }
 
 function prosesMasuk() {
@@ -369,10 +370,16 @@ function tambahAntrian(kode, sumber) {
   if (m.sesi && !sesi) { toast('Isi ' + m.label + ' dulu'); return; }
   if (sumber === 'kamera') {
     var n = Date.now();
-    if (kode === terakhir.kode && n - terakhir.waktu < 4000) return; // cegah scan ganda
+    if (kode === terakhir.kode && n - terakhir.waktu < 15000) return; // cegah scan ganda
     terakhir = { kode: kode, waktu: n };
   }
-  antrian.push({ kode: kode, tanggal: tgl, sesi: sesi, modul: m, mode: modeScan });
+    var kunciLokal = [m.kunci, tgl, sesi, m.mode ? modeScan : '-', kode.toLowerCase()].join('|');
+  if (SUDAH_LOKAL[kunciLokal]) {
+    tampilHasil('dup', kode, 'Sudah discan di perangkat ini untuk sesi yang sama.');
+    bip('dup');
+    return;
+  }
+  antrian.push({ kode: kode, tanggal: tgl, sesi: sesi, modul: m, mode: modeScan, kunciLokal: kunciLokal });
   jalan();
 }
 
@@ -387,6 +394,7 @@ function jalan() {
 
   p.then(function (res) {
     sibuk = false;
+  if (res && (res.ok || res.duplikat)) SUDAH_LOKAL[t.kunciLokal] = true;
     hasilKirim(res, t);
     jalan();
   });
@@ -505,6 +513,22 @@ function bacaFotoQr(file) {
       bip('gagal');
     })
     .then(function () { try { pembaca.clear(); } catch (e) {} });
+}
+var SUDAH_LOKAL = {};
+
+function muatInfoServer() {
+  api('versi', []).then(function (res) {
+    var k = el('infoServer');
+    if (res && res.ok && res.versi) k.textContent = 'Server: ' + res.versi;
+    else if (res && res.pesan === 'Aksi tidak dikenal.') k.textContent = 'Server: VERSI LAMA (belum diperbarui)';
+    else k.textContent = 'Server: tidak terhubung';
+  });
+  api('waktuSholat', [TOKEN]).then(function (res) {
+    if (res && res.ok && res.data && res.data.length) {
+      MODUL[0].sesi = res.data;
+      aturModul();
+    }
+  });
 }
 /* ----- Mulai ----- */
 document.addEventListener('DOMContentLoaded', function () {
